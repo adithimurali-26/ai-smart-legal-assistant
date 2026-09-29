@@ -39,8 +39,8 @@ function Logo({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function Button({ children, onClick, variant = "primary", className = "", type = "button", disabled = false }: { children: React.ReactNode; onClick?: () => void; variant?: "primary" | "ghost" | "outline" | "copper" | "bloodstone"; className?: string; type?: "button" | "submit"; disabled?: boolean }) {
-  return <button type={type} onClick={onClick} disabled={disabled} className={`btn btn-${variant} ${className}`}>{children}</button>;
+function Button({ children, onClick, variant = "primary", className = "", type = "button", disabled = false, style }: { children: React.ReactNode; onClick?: () => void; variant?: "primary" | "ghost" | "outline" | "copper" | "bloodstone"; className?: string; type?: "button" | "submit"; disabled?: boolean; style?: React.CSSProperties }) {
+  return <button type={type} onClick={onClick} disabled={disabled} style={style} className={`btn btn-${variant} ${className}`}>{children}</button>;
 }
 
 function PublicNav() {
@@ -369,9 +369,11 @@ function Assistant() {
       .then(data => {
         setThreads(data || []);
         if (data && data.length) {
-          const first = data[0];
-          setSelectedThreadId(first.id);
-          api.getMessages(first.id).then(msgs => {
+          const activeThreadId = localStorage.getItem("counsel_active_thread");
+          if (activeThreadId) localStorage.removeItem("counsel_active_thread");
+          const target = (activeThreadId && data.find(t => t.id === activeThreadId)) || data[0];
+          setSelectedThreadId(target.id);
+          api.getMessages(target.id).then(msgs => {
             if (msgs && msgs.length) {
               setMessages(msgs);
               const lastWithSources = [...msgs].reverse().find(m => m.sources_used && m.sources_used.length > 0);
@@ -379,7 +381,7 @@ function Assistant() {
                 setSources(lastWithSources.sources_used);
               }
               // Only assign advocate if conversation has messages
-              updateActiveAdvocate(first.category + " " + first.title);
+              updateActiveAdvocate(target.category + " " + target.title);
             } else {
               setMessages([]);
               setSources([]);
@@ -454,6 +456,7 @@ function Assistant() {
       if (res.sources && res.sources.length) {
         setSources(res.sources);
       }
+      updateActiveAdvocate(query + " " + (ai.content || ""));
       toast.success("Verified legal sources retrieved");
     } catch (err: any) {
       toast.error(err.message || "Could not retrieve legal response");
@@ -1198,6 +1201,10 @@ function Documents() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [documentsList, setDocumentsList] = useState<any[]>([]);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [relatedLaws, setRelatedLaws] = useState<LegalSourceItem[]>([]);
+  const [assignedAdvocate, setAssignedAdvocate] = useState<AdvocateItem | null>(null);
+  const [selectedSourceDetail, setSelectedSourceDetail] = useState<LegalSourceItem | null>(null);
+  const [consulting, setConsulting] = useState(false);
 
   // Load existing uploaded documents on mount
   useEffect(() => {
@@ -1214,6 +1221,8 @@ function Documents() {
         const fullDoc = await api.getDocumentAnalysis(latest.id);
         if (mounted && fullDoc?.analysis) {
           setAudit(fullDoc.analysis);
+          setRelatedLaws(fullDoc.relatedLaws || []);
+          setAssignedAdvocate(fullDoc.assignedAdvocate || null);
         }
       } catch (err) {
         console.warn("Failed to load initial documents:", err);
@@ -1232,6 +1241,8 @@ function Documents() {
       const res = await api.getDocumentAnalysis(doc.id);
       if (res?.analysis) {
         setAudit(res.analysis);
+        setRelatedLaws(res.relatedLaws || []);
+        setAssignedAdvocate(res.assignedAdvocate || null);
       }
     } catch {
       toast.error("Failed to load document analysis");
@@ -1256,21 +1267,56 @@ function Documents() {
       setPipelineStage(3);
       const res = await api.uploadDocument(selected);
 
-      // Step 4: Insights
+      // Step 4: Insights & Legal Grounding
       setPipelineStage(4);
       setAudit(res.analysis);
       setSelectedDocId(res.document?.id || null);
-      toast.success("Document analyzed: structured audit generated");
+      setRelatedLaws(res.relatedLaws || []);
+      setAssignedAdvocate(res.assignedAdvocate || null);
+      toast.success("Document analyzed: structured audit, related laws & assigned counsel generated");
 
       // Refresh documents queue
       const updatedDocs = await api.getDocuments();
       setDocumentsList(updatedDocs);
     } catch (err: any) {
       toast.error(err.message || "Failed to analyze document");
-      // Show a generic error state — no fake personal data fallback
       setAudit(null);
+      setRelatedLaws([]);
+      setAssignedAdvocate(null);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleRequestConsultation = async () => {
+    if (!assignedAdvocate) return;
+    try {
+      await api.requestConsultation(
+        assignedAdvocate.id,
+        `User requested consultation regarding uploaded document: "${file?.name || "Legal Document"}" (${audit?.documentType || "Agreement"}). Document summary: ${audit?.summary || "Legal review requested"}`
+      );
+      toast.success(`Case brief and consultation request sent to ${assignedAdvocate.name}`);
+    } catch {
+      toast.error("Failed to submit consultation request");
+    }
+  };
+
+  const handleConsultInAssistant = async () => {
+    if (!audit) return;
+    setConsulting(true);
+    try {
+      const title = `Document Analysis: ${audit.documentType} (${file?.name || "Brief"})`;
+      const conv = await api.createConversation(title, audit.documentType || "Contract Analysis");
+      if (conv) {
+        localStorage.setItem("counsel_active_thread", conv.id);
+        const initialPrompt = `I have uploaded the document "${file?.name}". It is identified as a "${audit.documentType}". Summary: ${audit.summary}. Please provide a complete breakdown of my rights and liabilities, key risk clauses, and relevant Indian statutory protections.`;
+        await api.sendMessage(conv.id, initialPrompt, "simple");
+      }
+      window.location.href = "/app/assistant";
+    } catch {
+      window.location.href = "/app/assistant";
+    } finally {
+      setConsulting(false);
     }
   };
 
@@ -1383,70 +1429,216 @@ function Documents() {
             </div>
 
             {audit && (
-              <div style={{ marginTop: "24px" }}>
-                <div style={{ background: "#fbfaf7", padding: "16px", border: "1px solid var(--line)", marginBottom: "16px" }}>
-                  <span className="mono label">DOCUMENT CLASSIFICATION</span>
-                  <h3 style={{ margin: "4px 0", color: "var(--bloodstone)" }}>{audit.documentType}</h3>
-                  <p style={{ margin: 0, fontSize: "12px", color: "var(--ink-soft)" }}>{audit.summary}</p>
-                </div>
-
-                <div className="audit-grid">
-                  <div className="audit-card">
-                    <h4>Identified Parties</h4>
-                    <ul>
-                      {audit.parties.map((p, idx) => (
-                        <li key={idx}><strong>{p.role}</strong>: {p.name}</li>
-                      ))}
-                    </ul>
+              <div className="doc-analysis-layout" style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "1.3fr 0.9fr", gap: "24px", alignItems: "start" }}>
+                {/* Left Column: AI Assistant Insights & Clause Audits */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+                  <div style={{ background: "#fbfaf7", padding: "18px", border: "1px solid var(--line)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <span className="mono label" style={{ margin: 0 }}>DOCUMENT CLASSIFICATION</span>
+                      <span className="status-pill"><span /> Verified Under Indian Law</span>
+                    </div>
+                    <h3 style={{ margin: "6px 0", color: "var(--bloodstone)", font: "24px var(--serif)" }}>{audit.documentType}</h3>
+                    <p style={{ margin: 0, fontSize: "12px", color: "var(--ink-soft)", lineHeight: 1.6 }}>{audit.summary}</p>
                   </div>
 
-                  <div className="audit-card">
-                    <h4>Important Dates & Deadlines</h4>
-                    <ul>
-                      {audit.importantDates.map((d, idx) => (
-                        <li key={idx}><strong>{d.label}</strong>: {d.date}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="audit-card">
-                    <h4>Financial Considerations</h4>
-                    <ul>
-                      {audit.financialAmounts.map((f, idx) => (
-                        <li key={idx}><strong>{f.description}</strong>: {f.amount}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="audit-card">
-                    <h4>Key Obligations</h4>
-                    <ul>
-                      {audit.obligations.slice(0, 3).map((ob, idx) => (
-                        <li key={idx}>{ob}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                {audit.riskyClauses?.length > 0 && (
-                  <div style={{ marginTop: "16px" }}>
-                    <h4 style={{ font: "15px var(--serif)", margin: "0 0 10px", color: "var(--bloodstone)" }}>
-                      Identified Potential Risk Clauses
-                    </h4>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                      {audit.riskyClauses.map((rc, idx) => (
-                        <div key={idx} style={{ background: "#fff", border: "1px solid var(--line)", padding: "14px", borderLeft: rc.riskLevel === "high" ? "4px solid #c53030" : "4px solid #854d0e" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                            <span className={`risk-tag ${rc.riskLevel}`}>{rc.riskLevel} risk</span>
-                            <strong style={{ fontSize: "12px" }}>Clause extract</strong>
-                          </div>
-                          <p style={{ margin: "0 0 6px", fontSize: "12px", fontStyle: "italic", color: "var(--ink)" }}>“{rc.clause}”</p>
-                          <p style={{ margin: 0, fontSize: "11px", color: "var(--ink-soft)" }}><strong>Legal reason:</strong> {rc.explanation}</p>
-                        </div>
-                      ))}
+                  {/* AI Assistant Legal Guidance Card */}
+                  <div style={{ background: "#fffdf8", border: "1px solid var(--line)", borderLeft: "3px solid var(--teal-deep)", padding: "18px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+                      <div className="ai-avatar" style={{ width: "28px", height: "28px", fontSize: "10px" }}>
+                        <Bot size={16} />
+                      </div>
+                      <div>
+                        <strong style={{ fontSize: "12px", color: "var(--ink)", display: "block" }}>Counsel AI Assistant Analysis</strong>
+                        <small style={{ fontSize: "10px", color: "var(--muted)" }}>Statutory grounding & risk assessment</small>
+                      </div>
+                      <span className="relevance" style={{ marginLeft: "auto" }}>AUDITED</span>
+                    </div>
+                    <p style={{ fontSize: "12px", lineHeight: "1.65", color: "var(--ink-soft)", margin: "0 0 14px" }}>
+                      Based on Indian statutory compliance standards, this document has been cross-referenced with relevant central and state laws. Review the identified risk clauses below and consult with the assigned advocate for procedural safeguarding.
+                    </p>
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+                      <Button
+                        variant="primary"
+                        onClick={handleConsultInAssistant}
+                        disabled={consulting}
+                        style={{ fontSize: "11px", padding: "8px 14px" }}
+                      >
+                        <MessageSquare size={14} /> {consulting ? "Opening Assistant..." : "Open in AI Assistant Chat →"}
+                      </Button>
                     </div>
                   </div>
-                )}
+
+                  <div className="audit-grid">
+                    <div className="audit-card">
+                      <h4>Identified Parties</h4>
+                      <ul>
+                        {audit.parties.map((p, idx) => (
+                          <li key={idx}><strong>{p.role}</strong>: {p.name}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="audit-card">
+                      <h4>Important Dates & Deadlines</h4>
+                      <ul>
+                        {audit.importantDates.map((d, idx) => (
+                          <li key={idx}><strong>{d.label}</strong>: {d.date}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="audit-card">
+                      <h4>Financial Considerations</h4>
+                      <ul>
+                        {audit.financialAmounts.map((f, idx) => (
+                          <li key={idx}><strong>{f.description}</strong>: {f.amount}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="audit-card">
+                      <h4>Key Obligations</h4>
+                      <ul>
+                        {audit.obligations.slice(0, 3).map((ob, idx) => (
+                          <li key={idx}>{ob}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  {audit.riskyClauses?.length > 0 && (
+                    <div style={{ marginTop: "8px" }}>
+                      <h4 style={{ font: "15px var(--serif)", margin: "0 0 10px", color: "var(--bloodstone)" }}>
+                        Identified Potential Risk Clauses
+                      </h4>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                        {audit.riskyClauses.map((rc, idx) => (
+                          <div key={idx} style={{ background: "#fff", border: "1px solid var(--line)", padding: "14px", borderLeft: rc.riskLevel === "high" ? "4px solid #c53030" : "4px solid #854d0e" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                              <span className={`risk-tag ${rc.riskLevel}`}>{rc.riskLevel} risk</span>
+                              <strong style={{ fontSize: "12px" }}>Clause extract</strong>
+                            </div>
+                            <p style={{ margin: "0 0 6px", fontSize: "12px", fontStyle: "italic", color: "var(--ink)" }}>“{rc.clause}”</p>
+                            <p style={{ margin: 0, fontSize: "11px", color: "var(--ink-soft)" }}><strong>Legal reason:</strong> {rc.explanation}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column: Assigned Counsel & Related Laws (exact same as Ask Question page) */}
+                <aside className="sources-panel panel" style={{ background: "var(--paper)", border: "1px solid var(--line)" }}>
+                  {/* Advocate Details Section */}
+                  <div className="advocate-section">
+                    <div className="panel-head">
+                      <div><span className="mono label">LEGAL ADVOCATE</span><h3>Assigned Counsel</h3></div>
+                      <BriefcaseBusiness size={18} />
+                    </div>
+                    <div className="advocate-body">
+                      {!assignedAdvocate ? (
+                        <div className="advocate-card-wrapper" style={{ padding: "20px 16px", textAlign: "center", color: "var(--ink-soft)", background: "var(--parchment)", border: "1px dashed var(--line)" }}>
+                          <UserCheck size={26} style={{ margin: "0 auto 10px", display: "block", opacity: 0.35, color: "var(--bloodstone)" }} />
+                          <strong style={{ display: "block", fontSize: "13px", marginBottom: "6px", color: "var(--ink)" }}>Matching counsel...</strong>
+                          <span style={{ fontSize: "11px", lineHeight: 1.6, display: "block" }}>
+                            An advocate specializing in this document's legal field will be assigned.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="advocate-card-wrapper">
+                          <div className="advocate-card-header">
+                            <div className="adv-avatar-large">
+                              {assignedAdvocate.name?.split(" ").filter((w: string) => /^[A-Z]/.test(w)).slice(0, 2).map((w: string) => w[0]).join("") || "??"}
+                            </div>
+                            <div className="adv-main-info">
+                              <strong>{assignedAdvocate.name}</strong>
+                              <small>{assignedAdvocate.degree || assignedAdvocate.title || "Legal Advisor"}</small>
+                              <span className="adv-status-tag"><CheckCircle2 size={12} /> {assignedAdvocate.status || "Assigned for this Document"}</span>
+                            </div>
+                          </div>
+                          <div className="adv-detail-rows">
+                            {assignedAdvocate.barNo && (
+                              <div className="adv-detail-item">
+                                <span className="mono">BAR REG.</span>
+                                <strong>{assignedAdvocate.barNo}</strong>
+                              </div>
+                            )}
+                            {assignedAdvocate.experience && (
+                              <div className="adv-detail-item">
+                                <span className="mono">EXPERIENCE</span>
+                                <strong>{assignedAdvocate.experience}</strong>
+                              </div>
+                            )}
+                            {assignedAdvocate.court && (
+                              <div className="adv-detail-item">
+                                <span className="mono">JURISDICTION</span>
+                                <strong>{assignedAdvocate.court}</strong>
+                              </div>
+                            )}
+                            {assignedAdvocate.rating && (
+                              <div className="adv-detail-item">
+                                <span className="mono">RATING</span>
+                                <strong className="rating-text"><Star size={12} className="star-icon" /> {assignedAdvocate.rating}</strong>
+                              </div>
+                            )}
+                          </div>
+                          {assignedAdvocate.specialties && assignedAdvocate.specialties.length > 0 && (
+                            <div className="adv-specialties">
+                              <span className="mono label">SPECIALTIES</span>
+                              <div className="tag-flex">
+                                {assignedAdvocate.specialties.map((sp: string) => <span key={sp} className="specialty-tag">{sp}</span>)}
+                              </div>
+                            </div>
+                          )}
+                          <div className="adv-contact-box">
+                            {assignedAdvocate.phone && <div className="contact-row"><Phone size={13} /> <span>{assignedAdvocate.phone}</span></div>}
+                            {assignedAdvocate.email && <div className="contact-row"><Mail size={13} /> <span>{assignedAdvocate.email}</span></div>}
+                          </div>
+                          <div className="adv-actions">
+                            <Button variant="copper" className="w-full" onClick={handleRequestConsultation}>
+                              <UserCheck size={15} /> Request Consultation
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="sources-divider" />
+
+                  {/* Related Laws / Source Trail Section */}
+                  <div className="sources-section">
+                    <div className="panel-head">
+                      <div><span className="mono label">SOURCE TRAIL</span><h3>Related Laws</h3></div>
+                      <BookOpen size={18} />
+                    </div>
+                    <div className="sources-body">
+                      {relatedLaws.length === 0 ? (
+                        <div className="source-empty-hint">
+                          Statutory citations and act references will appear here once Counsel processes the document.
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                          {relatedLaws.map((s, idx) => (
+                            <div className="source-card" key={`${s.act}-${s.section}-${idx}`}>
+                              <span className="source-tag">{s.tag || "Primary source"}</span>
+                              <span className="mono">{s.section}</span>
+                              <strong>{s.title}</strong>
+                              <small>{s.act}</small>
+                              <button onClick={() => setSelectedSourceDetail(s)}>
+                                View source <ArrowRight size={13} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="source-note">
+                        <ShieldCheck size={16} style={{ flexShrink: 0, color: "var(--bloodstone)" }} />
+                        <span>Sources are verified against official India Code and central/state gazettes.</span>
+                      </div>
+                    </div>
+                  </div>
+                </aside>
               </div>
             )}
           </div>
@@ -1459,6 +1651,34 @@ function Documents() {
           </div>
         )}
       </div>
+
+      {/* Source Detail Modal */}
+      {selectedSourceDetail && (
+        <div className="legal-detail-backdrop" onClick={() => setSelectedSourceDetail(null)}>
+          <section className="legal-detail" onClick={e => e.stopPropagation()}>
+            <button className="detail-close" onClick={() => setSelectedSourceDetail(null)}><X size={17} /></button>
+            <span className="mono label">VERIFIED STATUTORY SOURCE</span>
+            <h2>{selectedSourceDetail.title}</h2>
+            <div className="detail-act">
+              <strong>{selectedSourceDetail.act}</strong>
+              <span>{selectedSourceDetail.section}</span>
+            </div>
+            <p>{selectedSourceDetail.explanation}</p>
+            {selectedSourceDetail.statutoryText && (
+              <div className="detail-note" style={{ marginTop: "16px" }}>
+                <ShieldCheck size={16} style={{ flexShrink: 0, color: "var(--bloodstone)" }} />
+                <span style={{ fontSize: "11px", fontStyle: "italic", lineHeight: "1.6" }}>
+                  "{selectedSourceDetail.statutoryText}"
+                </span>
+              </div>
+            )}
+            <div className="detail-fields" style={{ marginTop: "16px" }}>
+              <label>Verification Status<strong>Official Gazette Grounded</strong></label>
+              <label>Jurisdiction<strong>India (Central & State)</strong></label>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }

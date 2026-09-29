@@ -10,6 +10,7 @@ export interface LegalSourceItem {
   tag?: string;
   url?: string;
   explanation?: string;
+  statutoryText?: string;
 }
 
 export interface ChatMessage {
@@ -225,7 +226,7 @@ export const api = {
   },
 
   // Documents
-  async uploadDocument(file: File): Promise<{ document: any; analysis: DocumentAudit }> {
+  async uploadDocument(file: File): Promise<{ document: any; analysis: DocumentAudit; relatedLaws?: LegalSourceItem[]; assignedAdvocate?: AdvocateItem }> {
     const formData = new FormData();
     formData.append("file", file);
 
@@ -250,7 +251,7 @@ export const api = {
     }
   },
 
-  async getDocumentAnalysis(id: string) {
+  async getDocumentAnalysis(id: string): Promise<{ document: any; analysis: DocumentAudit; relatedLaws?: LegalSourceItem[]; assignedAdvocate?: AdvocateItem } | null> {
     try {
       const res = await this.fetchWithAuth(`/api/documents/${id}`);
       if (!res.ok) return null;

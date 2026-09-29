@@ -348,3 +348,17 @@
   gap: 4px;
 }
 
+/* Document Analysis Layout with Assigned Advocate & Relevant Sources */
+.doc-analysis-layout {
+  display: grid;
+  grid-template-columns: 1.3fr 0.9fr;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .doc-analysis-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+

@@ -138,6 +138,8 @@ function initSqliteSchema(): void {
       deadlines TEXT NOT NULL,
       risky_clauses TEXT NOT NULL,
       missing_clauses TEXT NOT NULL,
+      related_laws TEXT,
+      assigned_advocate_id TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
     );
@@ -316,6 +318,8 @@ async function initPostgresSchema(): Promise<void> {
       deadlines TEXT NOT NULL,
       risky_clauses TEXT NOT NULL,
       missing_clauses TEXT NOT NULL,
+      related_laws TEXT,
+      assigned_advocate_id TEXT,
       created_at TEXT NOT NULL
     );
 
