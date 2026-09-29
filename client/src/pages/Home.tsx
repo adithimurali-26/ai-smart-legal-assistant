@@ -1838,6 +1838,21 @@ function AdvisorLogin() {
     }
   };
 
+  const handleQuickLogin = async (sampleEmail: string, samplePass: string) => {
+    setEmail(sampleEmail);
+    setPassword(samplePass);
+    setLoading(true);
+    try {
+      const data = await api.login(sampleEmail, samplePass);
+      toast.success("Welcome to Advisor Console, " + (data.user?.full_name || "Advocate"));
+      window.location.href = "/advisor";
+    } catch (err: any) {
+      toast.error(err.message || "Failed to sign in as advisor");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="auth-page advisor-login">
       <div className="auth-art">
@@ -1879,6 +1894,87 @@ function AdvisorLogin() {
           <button type="submit" disabled={loading} className="btn btn-bloodstone auth-submit">
             {loading ? "Signing in..." : "Sign in to advisor console"} <ArrowRight size={16} />
           </button>
+
+          <div className="sample-auth-divider">
+            <span>OR TRY SAMPLE ADVOCATE LOGIN</span>
+          </div>
+
+          <div className="sample-auth-grid">
+            <div className="sample-auth-card">
+              <div className="sample-auth-meta">
+                <div className="sample-auth-avatar advisor-avatar">
+                  <Scale size={16} />
+                </div>
+                <div className="sample-auth-details">
+                  <div className="sample-auth-title-row">
+                    <strong>Adv. K. Ramesh</strong>
+                    <span className="sample-badge advisor-badge">Tenancy & Civil</span>
+                  </div>
+                  <p className="sample-auth-email">ramesh.advocate@counsel-legal.in</p>
+                  <span className="sample-auth-pass">Password: <code>password123</code></span>
+                </div>
+              </div>
+              <div className="sample-auth-actions">
+                <button
+                  type="button"
+                  className="btn btn-outline sample-btn-fill"
+                  onClick={() => {
+                    setEmail("ramesh.advocate@counsel-legal.in");
+                    setPassword("password123");
+                    toast.info("Adv. Ramesh credentials filled");
+                  }}
+                >
+                  Auto-fill
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-bloodstone sample-btn-quick"
+                  disabled={loading}
+                  onClick={() => handleQuickLogin("ramesh.advocate@counsel-legal.in", "password123")}
+                >
+                  {loading ? "Signing in..." : "Instant Login →"}
+                </button>
+              </div>
+            </div>
+
+            <div className="sample-auth-card">
+              <div className="sample-auth-meta">
+                <div className="sample-auth-avatar advisor-avatar">
+                  <Scale size={16} />
+                </div>
+                <div className="sample-auth-details">
+                  <div className="sample-auth-title-row">
+                    <strong>Adv. Priya Sundaram</strong>
+                    <span className="sample-badge advisor-badge">Labor & Workplace</span>
+                  </div>
+                  <p className="sample-auth-email">priya.advocate@counsel-legal.in</p>
+                  <span className="sample-auth-pass">Password: <code>password123</code></span>
+                </div>
+              </div>
+              <div className="sample-auth-actions">
+                <button
+                  type="button"
+                  className="btn btn-outline sample-btn-fill"
+                  onClick={() => {
+                    setEmail("priya.advocate@counsel-legal.in");
+                    setPassword("password123");
+                    toast.info("Adv. Priya credentials filled");
+                  }}
+                >
+                  Auto-fill
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-bloodstone sample-btn-quick"
+                  disabled={loading}
+                  onClick={() => handleQuickLogin("priya.advocate@counsel-legal.in", "password123")}
+                >
+                  {loading ? "Signing in..." : "Instant Login →"}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="auth-switch">Need a user workspace instead? <Link href="/user-login">Sign in as a user</Link></div>
         </form>
       </div>
@@ -2077,6 +2173,21 @@ function Login() {
     }
   };
 
+  const handleQuickLogin = async (sampleEmail: string, samplePass: string) => {
+    setEmail(sampleEmail);
+    setPassword(samplePass);
+    setLoading(true);
+    try {
+      const data = await api.login(sampleEmail, samplePass);
+      toast.success("Welcome back, " + (data.user?.full_name || "there"));
+      window.location.href = "/app";
+    } catch (err: any) {
+      toast.error(err.message || "Sign in failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="auth-page">
       <div className="auth-art">
@@ -2121,6 +2232,48 @@ function Login() {
           <button type="submit" disabled={loading} className="btn btn-primary auth-submit">
             {loading ? "Signing in..." : "Sign in"} <ArrowRight size={16} />
           </button>
+
+          <div className="sample-auth-divider">
+            <span>OR TRY SAMPLE USER LOGIN</span>
+          </div>
+
+          <div className="sample-auth-card">
+            <div className="sample-auth-meta">
+              <div className="sample-auth-avatar">
+                <UserCheck size={16} />
+              </div>
+              <div className="sample-auth-details">
+                <div className="sample-auth-title-row">
+                  <strong>Sample Citizen Account</strong>
+                  <span className="sample-badge">DEMO USER</span>
+                </div>
+                <p className="sample-auth-email">sample.user@counsel-legal.in</p>
+                <span className="sample-auth-pass">Password: <code>password123</code></span>
+              </div>
+            </div>
+            <div className="sample-auth-actions">
+              <button
+                type="button"
+                className="btn btn-outline sample-btn-fill"
+                onClick={() => {
+                  setEmail("sample.user@counsel-legal.in");
+                  setPassword("password123");
+                  toast.info("Sample credentials filled");
+                }}
+              >
+                Auto-fill
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary sample-btn-quick"
+                disabled={loading}
+                onClick={() => handleQuickLogin("sample.user@counsel-legal.in", "password123")}
+              >
+                {loading ? "Signing in..." : "Instant Login →"}
+              </button>
+            </div>
+          </div>
+
           <div className="auth-switch">New to Counsel? <Link href="/register">Create an account</Link></div>
         </form>
       </div>
